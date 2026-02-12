@@ -342,8 +342,16 @@ class RouletteSession(SSHServerSession):
         elif cmd == "users":
             await self._show_users()
         elif cmd == "bet" and len(parts) >= 2:
-            # Simplified syntax:
+            # Simplified syntax (amount first, then position(s)):
             #   /bet 10 17           - Bet €10 on number 17
+            #   /bet 20 5,6          - Bet €20 on split 5,6
+            #   /bet 15 1,2,4,5      - Bet €15 on corner
+            #   /bet 25 red          - Bet €25 on red
+            #   /bet 15 even         - Bet €15 on even
+            #   /bet 10 high         - Bet €10 on high
+            #   /bet 30 1st12        - Bet €30 on first dozen
+            #   /bet 25 col1         - Bet €25 on column 1
+            #   /bet 5 17 23 8       - Bet €5 on each of 17, 23, and 8
             # Legacy syntax (still supported):
             #   /bet number 17 10
             #   /bet split 5,6 20
@@ -361,28 +369,23 @@ class RouletteSession(SSHServerSession):
         """Handle bet command.
 
         Args:
-            args: Command arguments (amount, number) for simplified syntax or (type, value, amount) for legacy syntax
+            args: Command arguments with simplified syntax: /bet <amount> <position(s)>
+                  or legacy syntax: /bet <type> <value> <amount>
         """
         if len(args) < 2:
-            self.write(self.tui.render_error("Usage: /bet <amount> <number> or /bet <type> <value> <amount>") + "\n")
+            self.write(self.tui.render_error("Usage: /bet <amount> <position(s)>") + "\n")
             return
 
-        # Check if first argument is an amount (simplified syntax: /bet 10 17)
+        # Check if first argument is an amount (simplified syntax)
         try:
-            amount = float(args[0])
-            if len(args) == 2:
-                # Try to parse second argument as a number
-                try:
-                    number = int(args[1])
-                    if 0 <= number <= 36:
-                        # Simplified syntax: /bet <amount> <number>
-                        await self._place_bet(BetType.NUMBER, args[1], args[0])
-                        return
-                except ValueError:
-                    pass  # Not a number, continue with legacy syntax
+            float(args[0])  # Validate it's a number
+            # Simplified syntax detected
+            await self._handle_simplified_bet(args[0], args[1:])
+            return
         except ValueError:
-            pass  # Not an amount, continue with legacy syntax
+            pass  # Not an amount, try legacy syntax
 
+        # Legacy syntax: /bet <type> <value> <amount>
         bet_type_str = args[0].lower()
 
         # Map command types to BetType
@@ -431,6 +434,123 @@ class RouletteSession(SSHServerSession):
                 )
                 + "\n"
             )
+
+    async def _handle_simplified_bet(self, amount_str: str, positions: list) -> None:
+        """Handle simplified bet syntax.
+
+        Args:
+            amount_str: Bet amount as string
+            positions: Position(s) to bet on
+        """
+        if not positions:
+            self.write(self.tui.render_error("Please specify position(s) to bet on") + "\n")
+            return
+
+        # Validate amount
+        try:
+            float(amount_str)  # Validate it's a number
+        except ValueError:
+            self.write(self.tui.render_error("Invalid amount") + "\n")
+            return
+
+        # Handle multiple positions (bet same amount on each)
+        if len(positions) > 1:
+            # Check if all positions are numbers
+            try:
+                numbers = [int(p) for p in positions]
+                if all(0 <= n <= 36 for n in numbers):
+                    # Multiple straight-up bets
+                    for num_str in positions:
+                        await self._place_bet(BetType.NUMBER, num_str, amount_str)
+                    return
+            except ValueError:
+                pass  # Not all numbers, show error
+
+            self.write(
+                self.tui.render_error(
+                    "Multiple positions must be numbers 0-36 for straight-up bets"
+                )
+                + "\n"
+            )
+            return
+
+        # Single position
+        position = positions[0].lower()
+
+        # Try to parse as a single number
+        try:
+            number = int(position)
+            if 0 <= number <= 36:
+                await self._place_bet(BetType.NUMBER, position, amount_str)
+                return
+        except ValueError:
+            pass
+
+        # Check for comma-separated numbers (split or corner)
+        if "," in position:
+            numbers = position.split(",")
+            if len(numbers) == 2:
+                # Split bet
+                await self._place_bet(BetType.SPLIT, position, amount_str)
+                return
+            elif len(numbers) == 4:
+                # Corner bet
+                await self._place_bet(BetType.CORNER, position, amount_str)
+                return
+            else:
+                self.write(
+                    self.tui.render_error(
+                        "Comma-separated bets: 2 numbers (split) or 4 numbers (corner)"
+                    )
+                    + "\n"
+                )
+                return
+
+        # Even chances
+        if position in ["red", "black"]:
+            await self._place_bet(BetType.COLOR, position, amount_str)
+            return
+
+        if position in ["even", "odd"]:
+            await self._place_bet(BetType.EVEN_ODD, position, amount_str)
+            return
+
+        if position in ["high", "low"]:
+            await self._place_bet(BetType.HIGH_LOW, position, amount_str)
+            return
+
+        # Dozens
+        if position in ["1st12", "2nd12", "3rd12", "1-12", "13-24", "25-36"]:
+            # Map to dozen value
+            dozen_map = {
+                "1st12": "1",
+                "1-12": "1",
+                "2nd12": "2",
+                "13-24": "2",
+                "3rd12": "3",
+                "25-36": "3",
+            }
+            await self._place_bet(BetType.DOZEN, dozen_map[position], amount_str)
+            return
+
+        # Columns
+        if position in ["col1", "col2", "col3", "column1", "column2", "column3"]:
+            # Map to column value
+            column_map = {
+                "col1": "1",
+                "column1": "1",
+                "col2": "2",
+                "column2": "2",
+                "col3": "3",
+                "column3": "3",
+            }
+            await self._place_bet(BetType.COLUMN, column_map[position], amount_str)
+            return
+
+        # Unknown position
+        self.write(
+            self.tui.render_error(f"Unknown position: {position}. Type '/help' for options.") + "\n"
+        )
 
     async def _place_bet(self, bet_type: BetType, value: str, amount_str: str) -> None:
         """Place a bet.

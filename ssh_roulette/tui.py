@@ -142,24 +142,29 @@ class RouletteTUI:
         lines = []
         lines.append(self.term.bold + "Commands (use in chat with /):")
         lines.append("")
+        lines.append(self.term.bold + "Bet syntax: /bet <amount> <position(s)>")
+        lines.append("")
         lines.append(
             "  " + self.term.green("/bet <amt> <n>") + "           - Straight up (0-36), pays 35:1"
         )
         lines.append(
-            "  " + self.term.green("/bet split <n1,n2> <amt>") + "  - 2 adjacent numbers, pays 17:1"
+            "  " + self.term.green("/bet <amt> <n1,n2>") + "       - Split (2 numbers), pays 17:1"
         )
         lines.append(
-            "  " + self.term.green("/bet corner <n1-n4> <amt>") + " - 4 corner numbers, pays 8:1"
+            "  " + self.term.green("/bet <amt> <n1,n2,n3,n4>") + " - Corner (4 numbers), pays 8:1"
+        )
+        lines.append("  " + self.term.green("/bet <amt> <n> <n> ...") + "  - Multiple straight-ups")
+        lines.append("")
+        lines.append("  " + self.term.green("/bet <amt> red/black") + "    - Color bet, pays 1:1")
+        lines.append(
+            "  " + self.term.green("/bet <amt> even/odd") + "     - Even/odd bet, pays 1:1"
         )
         lines.append(
-            "  " + self.term.green("/bet color <red/black> <amt>") + " - Color bet, pays 1:1"
+            "  " + self.term.green("/bet <amt> high/low") + "     - High(19-36)/low(1-18), pays 1:1"
         )
-        lines.append(
-            "  " + self.term.green("/bet even/odd <amt>") + "       - Even/odd bet, pays 1:1"
-        )
-        lines.append(
-            "  " + self.term.green("/bet high/low <amt>") + "       - High/low bet, pays 1:1"
-        )
+        lines.append("")
+        lines.append("  " + self.term.green("/bet <amt> 1st12/2nd12/3rd12") + " - Dozens, pays 2:1")
+        lines.append("  " + self.term.green("/bet <amt> col1/col2/col3") + "   - Columns, pays 2:1")
         lines.append("")
         lines.append("  " + self.term.yellow("/users") + "   - List connected users")
         lines.append("  " + self.term.yellow("/help") + "    - Show this help")

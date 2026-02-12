@@ -58,29 +58,38 @@ Once connected, you can use the following commands:
 
 #### Betting Commands
 
+All bets use the simplified syntax: `/bet <amount> <position(s)>`
+
+**Single Number Bets:**
 - `/bet <amount> <n>` - Straight up bet on number (0-36), pays 35:1
   - Example: `/bet 10 17` (bet €10 on number 17)
 
-- `/bet split <n1,n2> <amount>` - Bet on 2 adjacent numbers, pays 17:1
-  - Example: `/bet split 5,6 20` (bet €20 on numbers 5 and 6)
+**Multiple Number Bets:**
+- `/bet <amount> <n1,n2>` - Split bet on 2 adjacent numbers, pays 17:1
+  - Example: `/bet 20 5,6` (bet €20 on numbers 5 and 6)
 
-- `/bet corner <n1,n2,n3,n4> <amount>` - Bet on 4 corner numbers, pays 8:1
-  - Example: `/bet corner 1,2,4,5 15` (bet €15 on the corner 1,2,4,5)
+- `/bet <amount> <n1,n2,n3,n4>` - Corner bet on 4 corner numbers, pays 8:1
+  - Example: `/bet 15 1,2,4,5` (bet €15 on the corner 1,2,4,5)
 
-- `/bet color <red/black> <amount>` - Bet on red or black, pays 1:1
-  - Example: `/bet color red 20` (bet €20 on red)
+- `/bet <amount> <n> <n> ...` - Multiple straight-up bets with same amount
+  - Example: `/bet 5 17 23 8` (bet €5 on each of 17, 23, and 8)
 
-- `/bet even <amount>` - Bet on even numbers, pays 1:1
-  - Example: `/bet even 15` (bet €15 on even)
+**Even Chance Bets (1:1 payout):**
+- `/bet <amount> red` or `/bet <amount> black` - Color bet
+  - Example: `/bet 20 red` (bet €20 on red)
 
-- `/bet odd <amount>` - Bet on odd numbers, pays 1:1
-  - Example: `/bet odd 15` (bet €15 on odd)
+- `/bet <amount> even` or `/bet <amount> odd` - Even/odd bet
+  - Example: `/bet 15 even` (bet €15 on even)
 
-- `/bet high <amount>` - Bet on high numbers (19-36), pays 1:1
-  - Example: `/bet high 25` (bet €25 on high numbers)
+- `/bet <amount> high` or `/bet <amount> low` - High (19-36) / Low (1-18) bet
+  - Example: `/bet 25 high` (bet €25 on high numbers)
 
-- `/bet low <amount>` - Bet on low numbers (1-18), pays 1:1
-  - Example: `/bet low 25` (bet €25 on low numbers)
+**Group Bets (2:1 payout):**
+- `/bet <amount> 1st12` / `2nd12` / `3rd12` - Dozen bets (groups of 12)
+  - Example: `/bet 30 1st12` (bet €30 on numbers 1-12)
+
+- `/bet <amount> col1` / `col2` / `col3` - Column bets
+  - Example: `/bet 25 col1` (bet €25 on column 1)
 
 #### Other Commands
 
