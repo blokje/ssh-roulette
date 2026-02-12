@@ -210,10 +210,10 @@ ssh -p 2222 localhost
 #### Example Game Session
 ```
 > Hello everyone!               # Chat message
-> /bet number 17 10             # Bet €10 on 17
-> /bet split 5,6 20             # Bet €20 on 5 and 6
-> /bet corner 1,2,4,5 15        # Bet €15 on corner
-> /bet color red 25             # Bet €25 on red
+> /bet 10 17                    # Bet €10 on 17
+> /bet 20 5,6                   # Bet €20 on split 5 and 6
+> /bet 15 1,2,4,5               # Bet €15 on corner
+> /bet 25 red                   # Bet €25 on red
 > /users                        # See who's online
 > /help                         # Show commands
 > /quit                         # Exit

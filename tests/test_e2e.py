@@ -109,7 +109,7 @@ async def test_full_end_to_end_flow():
 
                 # ===== Step 5: Place winning bet =====
                 # Bet €50 on number 17
-                process.stdin.write("/bet number 17 50\n")
+                process.stdin.write("/bet 50 17\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
@@ -140,7 +140,7 @@ async def test_full_end_to_end_flow():
 
                 # ===== Step 7: Go all-in =====
                 # Bet all remaining balance on number 5
-                process.stdin.write("/bet number 5 50\n")
+                process.stdin.write("/bet 50 5\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
@@ -155,13 +155,18 @@ async def test_full_end_to_end_flow():
                     assert user["balance"] == 0.0
 
                 # ===== Step 9: Try to bet, should reject =====
-                process.stdin.write("/bet number 7 10\n")
+                # Note: The game loop refreshes the display after each command,
+                # which clears error messages from the screen. We verify the bet
+                # was rejected by checking the balance remains at 0.
+                process.stdin.write("/bet 10 7\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
                 output_str = output.decode() if isinstance(output, bytes) else output
-                # Should show insufficient balance error
-                assert "insufficient" in output_str.lower() or "balance" in output_str.lower()
+                # Bet should fail due to insufficient balance
+                # Verify balance is still 0 (bet was rejected)
+                user = await db.get_user_by_fingerprint(key_fingerprint)
+                assert user["balance"] == 0.0  # Balance unchanged, bet was rejected
 
                 # ===== Step 10: Fake new day, restore balance =====
                 # Set last_bankruptcy_reset to yesterday
@@ -331,14 +336,14 @@ async def test_end_to_end_all_bet_types():
 
                 # Test different bet types
                 bet_commands = [
-                    "/bet number 17 5\n",
-                    "/bet split 5,6 5\n",
-                    "/bet corner 1,2,4,5 5\n",
-                    "/bet color red 5\n",
-                    "/bet even 5\n",
-                    "/bet odd 5\n",
-                    "/bet high 5\n",
-                    "/bet low 5\n",
+                    "/bet 5 17\n",
+                    "/bet 5 5,6\n",
+                    "/bet 5 1,2,4,5\n",
+                    "/bet 5 red\n",
+                    "/bet 5 even\n",
+                    "/bet 5 odd\n",
+                    "/bet 5 high\n",
+                    "/bet 5 low\n",
                 ]
 
                 for cmd in bet_commands:
