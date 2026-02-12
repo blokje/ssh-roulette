@@ -379,4 +379,3 @@ class TestSSHServerIntegration:
         # Check total deducted (10+20+15+25+10+10 = 90)
         user = await temp_db.get_user_by_id(user_id)
         assert user["balance"] == 910.0
-

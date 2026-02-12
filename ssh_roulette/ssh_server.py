@@ -199,9 +199,7 @@ class RouletteSession(SSHServerSession):
             # Get SSH key fingerprint from extra_info (stored during authentication)
             client_key = conn.get_extra_info("client_public_key")
             if client_key:
-                key_fingerprint = hashlib.sha256(
-                    client_key.encode_ssh_public()
-                ).hexdigest()
+                key_fingerprint = hashlib.sha256(client_key.encode_ssh_public()).hexdigest()
             else:
                 self.write(
                     "Error: No SSH key provided. Connection requires SSH key authentication.\n"
