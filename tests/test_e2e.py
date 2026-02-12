@@ -155,8 +155,9 @@ async def test_full_end_to_end_flow():
                     assert user["balance"] == 0.0
 
                 # ===== Step 9: Try to bet, should reject =====
-                # Note: Error message gets overwritten by display refresh
-                # This is a known issue with the game loop, not related to bet simplification
+                # Note: The game loop refreshes the display after each command,
+                # which clears error messages from the screen. We verify the bet
+                # was rejected by checking the balance remains at 0.
                 process.stdin.write("/bet 10 7\n")
                 await asyncio.sleep(0.3)
 
