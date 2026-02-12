@@ -1,13 +1,16 @@
 """Roulette game logic."""
 
 import random
-from typing import Dict, List, Tuple, Optional
+from typing import Tuple, Optional
 from enum import Enum
 
 
 class BetType(Enum):
     """Types of bets in Roulette."""
+
     NUMBER = "number"  # Straight up bet on a single number
+    SPLIT = "split"  # Bet on two adjacent numbers
+    CORNER = "corner"  # Bet on four numbers at corners
     COLOR = "color"  # Red or black
     EVEN_ODD = "even_odd"  # Even or odd
     HIGH_LOW = "high_low"  # 1-18 (low) or 19-36 (high)
@@ -26,28 +29,28 @@ class RouletteWheel:
     @classmethod
     def spin(cls) -> Tuple[int, str]:
         """Spin the wheel and return the winning number and color.
-        
+
         Returns:
             Tuple of (winning_number, winning_color)
         """
         number = random.randint(0, 36)
-        
+
         if number in cls.RED_NUMBERS:
             color = "red"
         elif number in cls.BLACK_NUMBERS:
             color = "black"
         else:
             color = "green"
-        
+
         return number, color
 
     @classmethod
     def get_color(cls, number: int) -> str:
         """Get the color of a number.
-        
+
         Args:
             number: The roulette number (0-36)
-            
+
         Returns:
             The color ('red', 'black', or 'green')
         """
@@ -64,7 +67,7 @@ class Bet:
 
     def __init__(self, bet_type: BetType, value: str, amount: float):
         """Initialize a bet.
-        
+
         Args:
             bet_type: Type of bet
             value: The value being bet on (number, color, etc.)
@@ -76,11 +79,11 @@ class Bet:
 
     def calculate_payout(self, winning_number: int, winning_color: str) -> float:
         """Calculate payout for this bet.
-        
+
         Args:
             winning_number: The winning number
             winning_color: The winning color
-            
+
         Returns:
             Payout amount (0 if bet loses)
         """
@@ -88,6 +91,20 @@ class Bet:
             # Straight up bet pays 35:1
             if int(self.value) == winning_number:
                 return self.amount * 36  # Original bet + 35:1 payout
+            return 0.0
+
+        elif self.bet_type == BetType.SPLIT:
+            # Split bet pays 17:1
+            numbers = [int(n) for n in self.value.split(",")]
+            if winning_number in numbers:
+                return self.amount * 18  # Original bet + 17:1 payout
+            return 0.0
+
+        elif self.bet_type == BetType.CORNER:
+            # Corner bet pays 8:1
+            numbers = [int(n) for n in self.value.split(",")]
+            if winning_number in numbers:
+                return self.amount * 9  # Original bet + 8:1 payout
             return 0.0
 
         elif self.bet_type == BetType.COLOR:
@@ -143,21 +160,23 @@ class Bet:
         return 0.0
 
     @staticmethod
-    def validate_bet(bet_type: str, value: str, amount: float, user_balance: float) -> Optional[str]:
+    def validate_bet(
+        bet_type: str, value: str, amount: float, user_balance: float
+    ) -> Optional[str]:
         """Validate a bet.
-        
+
         Args:
             bet_type: Type of bet
             value: Bet value
             amount: Bet amount
             user_balance: User's current balance
-            
+
         Returns:
             Error message if invalid, None if valid
         """
         if amount <= 0:
             return "Bet amount must be positive"
-        
+
         if amount > user_balance:
             return "Insufficient balance"
 
@@ -173,6 +192,33 @@ class Bet:
                     return "Number must be between 0 and 36"
             except ValueError:
                 return "Invalid number"
+
+        elif bet_type_enum == BetType.SPLIT:
+            # Validate split bet (two adjacent numbers)
+            try:
+                numbers = [int(n.strip()) for n in value.split(",")]
+                if len(numbers) != 2:
+                    return "Split bet requires exactly 2 numbers (e.g., '5,6')"
+                for num in numbers:
+                    if not 0 <= num <= 36:
+                        return "Numbers must be between 0 and 36"
+                # Check if numbers are adjacent (simplified check)
+                if abs(numbers[0] - numbers[1]) not in [1, 3]:
+                    return "Numbers must be adjacent on the roulette table"
+            except ValueError:
+                return "Invalid split bet format. Use: number1,number2"
+
+        elif bet_type_enum == BetType.CORNER:
+            # Validate corner bet (four numbers at corners)
+            try:
+                numbers = [int(n.strip()) for n in value.split(",")]
+                if len(numbers) != 4:
+                    return "Corner bet requires exactly 4 numbers (e.g., '1,2,4,5')"
+                for num in numbers:
+                    if not 0 <= num <= 36:
+                        return "Numbers must be between 0 and 36"
+            except ValueError:
+                return "Invalid corner bet format. Use: n1,n2,n3,n4"
 
         elif bet_type_enum == BetType.COLOR:
             if value not in ["red", "black"]:

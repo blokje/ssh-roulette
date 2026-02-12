@@ -2,9 +2,8 @@
 
 import aiosqlite
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-import hashlib
 
 
 class Database:
@@ -12,7 +11,7 @@ class Database:
 
     def __init__(self, db_path: str = "roulette.db"):
         """Initialize database manager.
-        
+
         Args:
             db_path: Path to the SQLite database file
         """
@@ -77,22 +76,23 @@ class Database:
         self, username: str, ssh_key_fingerprint: str, initial_balance: float = 100.0
     ) -> Optional[int]:
         """Create a new user.
-        
+
         Args:
             username: The username
             ssh_key_fingerprint: SSH key fingerprint
             initial_balance: Starting balance (default: €100)
-            
+
         Returns:
             User ID if successful, None otherwise
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
             try:
                 async with aiosqlite.connect(self.db_path) as db:
                     cursor = await db.execute(
                         """
-                        INSERT INTO users (username, ssh_key_fingerprint, balance, created_at, updated_at)
+                        INSERT INTO users
+                        (username, ssh_key_fingerprint, balance, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?)
                         """,
                         (username, ssh_key_fingerprint, initial_balance, now, now),
@@ -104,10 +104,10 @@ class Database:
 
     async def get_user_by_fingerprint(self, ssh_key_fingerprint: str) -> Optional[Dict[str, Any]]:
         """Get user by SSH key fingerprint.
-        
+
         Args:
             ssh_key_fingerprint: SSH key fingerprint
-            
+
         Returns:
             User data dict or None
         """
@@ -121,10 +121,10 @@ class Database:
 
     async def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user by ID.
-        
+
         Args:
             user_id: User ID
-            
+
         Returns:
             User data dict or None
         """
@@ -136,15 +136,15 @@ class Database:
 
     async def update_user_balance(self, user_id: int, new_balance: float) -> bool:
         """Update user balance.
-        
+
         Args:
             user_id: User ID
             new_balance: New balance amount
-            
+
         Returns:
             True if successful, False otherwise
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
@@ -156,15 +156,15 @@ class Database:
 
     async def create_game(self, winning_number: int, winning_color: str) -> int:
         """Create a new game record.
-        
+
         Args:
             winning_number: The winning number (0-36)
             winning_color: The winning color ('red', 'black', or 'green')
-            
+
         Returns:
             Game ID
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO games (winning_number, winning_color, created_at) VALUES (?, ?, ?)",
@@ -177,18 +177,18 @@ class Database:
         self, user_id: int, game_id: int, bet_type: str, bet_value: str, amount: float
     ) -> int:
         """Create a new bet.
-        
+
         Args:
             user_id: User ID
             game_id: Game ID
             bet_type: Type of bet (number, color, even/odd, etc.)
             bet_value: The value being bet on
             amount: Bet amount
-            
+
         Returns:
             Bet ID
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """
@@ -202,32 +202,30 @@ class Database:
 
     async def get_game_bets(self, game_id: int) -> List[Dict[str, Any]]:
         """Get all bets for a game.
-        
+
         Args:
             game_id: Game ID
-            
+
         Returns:
             List of bet dicts
         """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM bets WHERE game_id = ?", (game_id,)
-            )
+            cursor = await db.execute("SELECT * FROM bets WHERE game_id = ?", (game_id,))
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
     async def add_chat_message(self, user_id: int, message: str) -> int:
         """Add a chat message.
-        
+
         Args:
             user_id: User ID
             message: Chat message
-            
+
         Returns:
             Message ID
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO chat_messages (user_id, message, created_at) VALUES (?, ?, ?)",
@@ -238,10 +236,10 @@ class Database:
 
     async def get_recent_chat_messages(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent chat messages.
-        
+
         Args:
             limit: Maximum number of messages to retrieve
-            
+
         Returns:
             List of message dicts with user info
         """
@@ -249,10 +247,10 @@ class Database:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 """
-                SELECT c.*, u.username 
-                FROM chat_messages c 
-                JOIN users u ON c.user_id = u.id 
-                ORDER BY c.created_at DESC 
+                SELECT c.*, u.username
+                FROM chat_messages c
+                JOIN users u ON c.user_id = u.id
+                ORDER BY c.created_at DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -262,47 +260,47 @@ class Database:
 
     async def reset_bankrupt_users(self, reset_amount: float = 10.0) -> int:
         """Reset balance for bankrupt users (balance <= 0) who haven't been reset today.
-        
+
         Args:
             reset_amount: Amount to give to bankrupt users
-            
+
         Returns:
             Number of users reset
         """
-        today = datetime.utcnow().date().isoformat()
-        now = datetime.utcnow().isoformat()
-        
+        today = datetime.now(timezone.utc).date().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+
         async with self._lock:
             async with aiosqlite.connect(self.db_path) as db:
                 # Find bankrupt users who haven't been reset today
                 cursor = await db.execute(
                     """
-                    SELECT id FROM users 
-                    WHERE balance <= 0 
+                    SELECT id FROM users
+                    WHERE balance <= 0
                     AND (last_bankruptcy_reset IS NULL OR last_bankruptcy_reset < ?)
                     """,
                     (today,),
                 )
                 user_ids = [row[0] for row in await cursor.fetchall()]
-                
+
                 if user_ids:
                     # Update their balances
                     placeholders = ",".join("?" * len(user_ids))
                     await db.execute(
                         f"""
-                        UPDATE users 
+                        UPDATE users
                         SET balance = ?, last_bankruptcy_reset = ?, updated_at = ?
                         WHERE id IN ({placeholders})
                         """,
                         (reset_amount, today, now, *user_ids),
                     )
                     await db.commit()
-                
+
                 return len(user_ids)
 
     async def get_all_users(self) -> List[Dict[str, Any]]:
         """Get all users.
-        
+
         Returns:
             List of user dicts
         """

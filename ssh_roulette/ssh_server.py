@@ -2,11 +2,11 @@
 
 import asyncio
 import asyncssh
-from asyncssh import SSHServerSession, SSHServerConnection
+from asyncssh import SSHServerSession
 from typing import Optional, Dict, Any, Set
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ssh_roulette.database import Database
 from ssh_roulette.tui import RouletteTUI
@@ -18,12 +18,12 @@ class GameState:
 
     def __init__(self, database: Database):
         """Initialize game state.
-        
+
         Args:
             database: Database instance
         """
         self.database = database
-        self.sessions: Set['RouletteSession'] = set()
+        self.sessions: Set["RouletteSession"] = set()
         self.current_game_id: Optional[int] = None
         self.last_spin_time: Optional[datetime] = None
         self.last_number: Optional[int] = None
@@ -33,9 +33,9 @@ class GameState:
         self._lock = asyncio.Lock()
         self._spin_task: Optional[asyncio.Task] = None
 
-    async def add_session(self, session: 'RouletteSession') -> None:
+    async def add_session(self, session: "RouletteSession") -> None:
         """Add a session to the game.
-        
+
         Args:
             session: Session to add
         """
@@ -43,9 +43,9 @@ class GameState:
             self.sessions.add(session)
             await self._ensure_spin_task()
 
-    async def remove_session(self, session: 'RouletteSession') -> None:
+    async def remove_session(self, session: "RouletteSession") -> None:
         """Remove a session from the game.
-        
+
         Args:
             session: Session to remove
         """
@@ -55,9 +55,11 @@ class GameState:
                 self._spin_task.cancel()
                 self._spin_task = None
 
-    async def broadcast_message(self, message: str, exclude: Optional['RouletteSession'] = None) -> None:
+    async def broadcast_message(
+        self, message: str, exclude: Optional["RouletteSession"] = None
+    ) -> None:
         """Broadcast a message to all sessions.
-        
+
         Args:
             message: Message to broadcast
             exclude: Optional session to exclude from broadcast
@@ -67,12 +69,12 @@ class GameState:
                 if session != exclude:
                     try:
                         session.write(message + "\n")
-                    except:
+                    except Exception:
                         pass
 
     async def add_chat_message(self, user_id: int, username: str, message: str) -> None:
         """Add a chat message and broadcast it.
-        
+
         Args:
             user_id: User ID
             username: Username
@@ -80,11 +82,13 @@ class GameState:
         """
         await self.database.add_chat_message(user_id, message)
         async with self._lock:
-            self.chat_messages.append({
-                "username": username,
-                "message": message,
-                "created_at": datetime.utcnow().isoformat(),
-            })
+            self.chat_messages.append(
+                {
+                    "username": username,
+                    "message": message,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             # Keep only last 100 messages
             if len(self.chat_messages) > 100:
                 self.chat_messages = self.chat_messages[-100:]
@@ -101,7 +105,7 @@ class GameState:
         while True:
             try:
                 await asyncio.sleep(self.spin_interval)
-                
+
                 async with self._lock:
                     if self.sessions:
                         await self._spin_wheel()
@@ -114,39 +118,37 @@ class GameState:
         """Spin the wheel and process all bets."""
         # Spin the wheel
         number, color = RouletteWheel.spin()
-        
+
         # Create game record
         game_id = await self.database.create_game(number, color)
-        
+
         # Update state
         self.last_number = number
         self.last_color = color
-        self.last_spin_time = datetime.utcnow()
+        self.last_spin_time = datetime.now(timezone.utc)
         self.current_game_id = game_id
-        
+
         # Broadcast result
-        await self.broadcast_message(
-            f"\n🎰 SPIN RESULT: {number} ({color.upper()}) 🎰\n"
-        )
-        
+        await self.broadcast_message(f"\n🎰 SPIN RESULT: {number} ({color.upper()}) 🎰\n")
+
         # Process any pending bets would go here
         # For now, just notify users
         for session in self.sessions:
             try:
                 await session.refresh_display()
-            except:
+            except Exception:
                 pass
 
     def get_seconds_until_spin(self) -> int:
         """Get seconds until next spin.
-        
+
         Returns:
             Seconds until next spin
         """
         if not self.last_spin_time:
             return 0
-        
-        elapsed = (datetime.utcnow() - self.last_spin_time).total_seconds()
+
+        elapsed = (datetime.now(timezone.utc) - self.last_spin_time).total_seconds()
         remaining = max(0, self.spin_interval - elapsed)
         return int(remaining)
 
@@ -156,7 +158,7 @@ class RouletteSession(SSHServerSession):
 
     def __init__(self, game_state: GameState):
         """Initialize session.
-        
+
         Args:
             game_state: Shared game state
         """
@@ -166,10 +168,11 @@ class RouletteSession(SSHServerSession):
         self.user_data: Optional[Dict[str, Any]] = None
         self.tui = RouletteTUI()
         self._chan: Optional[Any] = None
+        self._should_exit = False
 
     def connection_made(self, chan: Any) -> None:
         """Called when connection is made.
-        
+
         Args:
             chan: SSH channel
         """
@@ -177,7 +180,7 @@ class RouletteSession(SSHServerSession):
 
     def shell_requested(self) -> bool:
         """Handle shell request.
-        
+
         Returns:
             True to accept shell request
         """
@@ -192,45 +195,54 @@ class RouletteSession(SSHServerSession):
         try:
             # Get SSH connection to retrieve key info
             conn = self._chan.get_connection()
-            
+
             # Get SSH key fingerprint
             client_key = conn.get_key()
             if client_key:
                 key_fingerprint = hashlib.sha256(client_key.get_ssh_public_key()).hexdigest()
             else:
-                self.write("Error: No SSH key provided. Connection requires SSH key authentication.\n")
+                self.write(
+                    "Error: No SSH key provided. Connection requires SSH key authentication.\n"
+                )
                 self._chan.exit(1)
                 return
 
             # Look up or register user
             user = await self.game_state.database.get_user_by_fingerprint(key_fingerprint)
-            
+
             if not user:
                 # New user - register
                 self.write(self.tui.clear())
                 self.write(self.tui.render_registration())
-                
+
                 username = await self._read_line()
                 username = username.strip()
-                
+
                 # Validate username
-                if not re.match(r'^[a-zA-Z0-9_]{3,20}$', username):
-                    self.write(self.tui.render_error(
-                        "Invalid username. Must be 3-20 alphanumeric characters."
-                    ) + "\n")
+                if not re.match(r"^[a-zA-Z0-9_]{3,20}$", username):
+                    self.write(
+                        self.tui.render_error(
+                            "Invalid username. Must be 3-20 alphanumeric characters."
+                        )
+                        + "\n"
+                    )
                     self._chan.exit(1)
                     return
-                
+
                 # Create user
-                user_id = await self.game_state.database.create_user(username, key_fingerprint, 100.0)
-                
+                user_id = await self.game_state.database.create_user(
+                    username, key_fingerprint, 100.0
+                )
+
                 if not user_id:
                     self.write(self.tui.render_error("Username already taken.") + "\n")
                     self._chan.exit(1)
                     return
-                
+
                 user = await self.game_state.database.get_user_by_id(user_id)
-                self.write(self.tui.render_success(f"Welcome, {username}! You start with €100.00") + "\n")
+                self.write(
+                    self.tui.render_success(f"Welcome, {username}! You start with €100.00") + "\n"
+                )
                 await asyncio.sleep(2)
 
             self.user_id = user["id"]
@@ -242,8 +254,7 @@ class RouletteSession(SSHServerSession):
 
             # Broadcast join
             await self.game_state.broadcast_message(
-                f"*** {self.username} joined the game ***",
-                exclude=self
+                f"*** {self.username} joined the game ***", exclude=self
             )
 
             # Load recent chat messages
@@ -258,62 +269,132 @@ class RouletteSession(SSHServerSession):
         finally:
             await self.game_state.remove_session(self)
             if self.username:
-                await self.game_state.broadcast_message(
-                    f"*** {self.username} left the game ***"
-                )
+                await self.game_state.broadcast_message(f"*** {self.username} left the game ***")
 
     async def _game_loop(self) -> None:
         """Main game loop."""
-        while True:
+        while not self._should_exit:
             # Refresh user data
             self.user_data = await self.game_state.database.get_user_by_id(self.user_id)
-            
+
             # Display game screen
             await self.refresh_display()
-            
+
             # Read command
             self.write("> ")
             command = await self._read_line()
-            
+
             if not command:
                 continue
-            
-            parts = command.strip().split()
-            if not parts:
-                continue
-            
-            cmd = parts[0].lower()
-            
-            if cmd == "quit" or cmd == "exit":
-                self.write("Goodbye!\n")
-                break
-            elif cmd == "help":
-                self.write(self.tui.render_bet_options())
-            elif cmd == "chat" and len(parts) > 1:
-                message = " ".join(parts[1:])
-                await self.game_state.add_chat_message(
-                    self.user_id, self.username, message
-                )
-            elif cmd == "users":
-                await self._show_users()
-            elif cmd == "n" and len(parts) == 3:
-                # Bet on number
-                await self._place_bet(BetType.NUMBER, parts[1], parts[2])
-            elif cmd == "c" and len(parts) == 3:
-                # Bet on color
-                await self._place_bet(BetType.COLOR, parts[1], parts[2])
-            elif cmd == "e" and len(parts) == 3:
-                # Bet on even/odd
-                await self._place_bet(BetType.EVEN_ODD, parts[1], parts[2])
-            elif cmd == "h" and len(parts) == 3:
-                # Bet on high/low
-                await self._place_bet(BetType.HIGH_LOW, parts[1], parts[2])
+
+            command = command.strip()
+
+            # Check if it's a slash command
+            if command.startswith("/"):
+                await self._handle_slash_command(command[1:])
             else:
-                self.write(self.tui.render_error("Invalid command. Type 'help' for options.") + "\n")
+                # Regular message - send as chat
+                if command:
+                    await self.game_state.add_chat_message(self.user_id, self.username, command)
+
+    async def _handle_slash_command(self, command: str) -> None:
+        """Handle slash commands.
+
+        Args:
+            command: Command without the leading slash
+        """
+        parts = command.strip().split()
+        if not parts:
+            return
+
+        cmd = parts[0].lower()
+
+        if cmd == "quit" or cmd == "exit":
+            self.write("Goodbye!\n")
+            # Need to signal to exit the loop - set a flag
+            self._should_exit = True
+            return
+        elif cmd == "help":
+            self.write(self.tui.render_bet_options())
+        elif cmd == "users":
+            await self._show_users()
+        elif cmd == "bet" and len(parts) >= 3:
+            # /bet <type> <value> <amount>
+            # Examples:
+            #   /bet number 17 10
+            #   /bet split 5,6 20
+            #   /bet corner 1,2,4,5 15
+            #   /bet color red 25
+            #   /bet even 10
+            #   /bet odd 10
+            #   /bet high 10
+            #   /bet low 10
+            await self._handle_bet_command(parts[1:])
+        else:
+            self.write(self.tui.render_error("Invalid command. Type '/help' for options.") + "\n")
+
+    async def _handle_bet_command(self, args: list) -> None:
+        """Handle bet command.
+
+        Args:
+            args: Command arguments (type, value, amount)
+        """
+        if len(args) < 2:
+            self.write(self.tui.render_error("Usage: /bet <type> <value> <amount>") + "\n")
+            return
+
+        bet_type_str = args[0].lower()
+
+        # Map command types to BetType
+        if bet_type_str == "number":
+            if len(args) != 3:
+                self.write(self.tui.render_error("Usage: /bet number <0-36> <amount>") + "\n")
+                return
+            await self._place_bet(BetType.NUMBER, args[1], args[2])
+
+        elif bet_type_str == "split":
+            if len(args) != 3:
+                self.write(self.tui.render_error("Usage: /bet split <n1,n2> <amount>") + "\n")
+                return
+            await self._place_bet(BetType.SPLIT, args[1], args[2])
+
+        elif bet_type_str == "corner":
+            if len(args) != 3:
+                self.write(
+                    self.tui.render_error("Usage: /bet corner <n1,n2,n3,n4> <amount>") + "\n"
+                )
+                return
+            await self._place_bet(BetType.CORNER, args[1], args[2])
+
+        elif bet_type_str == "color":
+            if len(args) != 3:
+                self.write(self.tui.render_error("Usage: /bet color <red/black> <amount>") + "\n")
+                return
+            await self._place_bet(BetType.COLOR, args[1], args[2])
+
+        elif bet_type_str in ["even", "odd"]:
+            if len(args) != 2:
+                self.write(self.tui.render_error("Usage: /bet even/odd <amount>") + "\n")
+                return
+            await self._place_bet(BetType.EVEN_ODD, bet_type_str, args[1])
+
+        elif bet_type_str in ["high", "low"]:
+            if len(args) != 2:
+                self.write(self.tui.render_error("Usage: /bet high/low <amount>") + "\n")
+                return
+            await self._place_bet(BetType.HIGH_LOW, bet_type_str, args[1])
+
+        else:
+            self.write(
+                self.tui.render_error(
+                    f"Unknown bet type: {bet_type_str}. Type '/help' for options."
+                )
+                + "\n"
+            )
 
     async def _place_bet(self, bet_type: BetType, value: str, amount_str: str) -> None:
         """Place a bet.
-        
+
         Args:
             bet_type: Type of bet
             value: Bet value
@@ -324,25 +405,21 @@ class RouletteSession(SSHServerSession):
         except ValueError:
             self.write(self.tui.render_error("Invalid amount") + "\n")
             return
-        
+
         # Validate bet
-        error = Bet.validate_bet(
-            bet_type.value,
-            value,
-            amount,
-            self.user_data["balance"]
-        )
-        
+        error = Bet.validate_bet(bet_type.value, value, amount, self.user_data["balance"])
+
         if error:
             self.write(self.tui.render_error(error) + "\n")
             return
-        
+
         # For now, just acknowledge the bet
         # In a full implementation, bets would be stored and processed on next spin
-        self.write(self.tui.render_success(
-            f"Bet placed: {bet_type.value} on {value} for €{amount:.2f}"
-        ) + "\n")
-        
+        self.write(
+            self.tui.render_success(f"Bet placed: {bet_type.value} on {value} for €{amount:.2f}")
+            + "\n"
+        )
+
         # Update balance
         new_balance = self.user_data["balance"] - amount
         await self.game_state.database.update_user_balance(self.user_id, new_balance)
@@ -353,7 +430,7 @@ class RouletteSession(SSHServerSession):
         for session in self.game_state.sessions:
             if session.username:
                 users.append(session.username)
-        
+
         self.write("\nConnected users:\n")
         for username in sorted(users):
             self.write(f"  • {username}\n")
@@ -362,7 +439,7 @@ class RouletteSession(SSHServerSession):
     async def refresh_display(self) -> None:
         """Refresh the game display."""
         self.write(self.tui.clear())
-        
+
         screen = self.tui.render_full_screen(
             username=self.username,
             balance=self.user_data["balance"],
@@ -372,12 +449,12 @@ class RouletteSession(SSHServerSession):
             seconds_until_spin=self.game_state.get_seconds_until_spin(),
             num_users=len(self.game_state.sessions),
         )
-        
+
         self.write(screen + "\n")
 
     async def _read_line(self) -> str:
         """Read a line of input.
-        
+
         Returns:
             Input line
         """
@@ -389,7 +466,7 @@ class RouletteSession(SSHServerSession):
 
     def write(self, data: str) -> None:
         """Write data to the channel.
-        
+
         Args:
             data: Data to write
         """
@@ -402,7 +479,7 @@ class RouletteServer(asyncssh.SSHServer):
 
     def __init__(self, game_state: GameState):
         """Initialize server.
-        
+
         Args:
             game_state: Shared game state
         """
@@ -410,10 +487,10 @@ class RouletteServer(asyncssh.SSHServer):
 
     def begin_auth(self, username: str) -> bool:
         """Begin authentication.
-        
+
         Args:
             username: Username attempting to connect
-            
+
         Returns:
             True to allow authentication
         """
@@ -422,7 +499,7 @@ class RouletteServer(asyncssh.SSHServer):
 
     def public_key_auth_supported(self) -> bool:
         """Check if public key auth is supported.
-        
+
         Returns:
             True
         """
@@ -430,11 +507,11 @@ class RouletteServer(asyncssh.SSHServer):
 
     def validate_public_key(self, username: str, key: Any) -> bool:
         """Validate public key.
-        
+
         Args:
             username: Username
             key: SSH public key
-            
+
         Returns:
             True to accept any key (we'll handle registration in the session)
         """
@@ -443,7 +520,7 @@ class RouletteServer(asyncssh.SSHServer):
 
     def session_requested(self) -> RouletteSession:
         """Create a new session.
-        
+
         Returns:
             New RouletteSession instance
         """

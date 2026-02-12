@@ -1,6 +1,5 @@
 """Tests for Roulette game logic."""
 
-import pytest
 from ssh_roulette.game import RouletteWheel, Bet, BetType
 
 
@@ -186,3 +185,70 @@ class TestBet:
         """Test that valid color bets pass validation."""
         error = Bet.validate_bet("color", "red", 10.0, 100.0)
         assert error is None
+
+    def test_split_bet_win(self):
+        """Test winning split bet pays 17:1."""
+        bet = Bet(BetType.SPLIT, "5,6", 10.0)
+        payout = bet.calculate_payout(5, "red")
+        assert payout == 180.0  # 10 * 18
+
+    def test_split_bet_second_number_win(self):
+        """Test split bet wins on second number."""
+        bet = Bet(BetType.SPLIT, "5,6", 10.0)
+        payout = bet.calculate_payout(6, "black")
+        assert payout == 180.0
+
+    def test_split_bet_loss(self):
+        """Test losing split bet pays nothing."""
+        bet = Bet(BetType.SPLIT, "5,6", 10.0)
+        payout = bet.calculate_payout(7, "red")
+        assert payout == 0.0
+
+    def test_corner_bet_win(self):
+        """Test winning corner bet pays 8:1."""
+        bet = Bet(BetType.CORNER, "1,2,4,5", 10.0)
+        payout = bet.calculate_payout(1, "red")
+        assert payout == 90.0  # 10 * 9
+
+    def test_corner_bet_any_number_win(self):
+        """Test corner bet wins on any of the 4 numbers."""
+        bet = Bet(BetType.CORNER, "1,2,4,5", 10.0)
+        for num in [1, 2, 4, 5]:
+            payout = bet.calculate_payout(num, "red")
+            assert payout == 90.0
+
+    def test_corner_bet_loss(self):
+        """Test losing corner bet pays nothing."""
+        bet = Bet(BetType.CORNER, "1,2,4,5", 10.0)
+        payout = bet.calculate_payout(7, "red")
+        assert payout == 0.0
+
+    def test_validate_split_bet_valid(self):
+        """Test that valid split bets pass validation."""
+        error = Bet.validate_bet("split", "5,6", 10.0, 100.0)
+        assert error is None
+
+    def test_validate_split_bet_wrong_count(self):
+        """Test that split bet with wrong number count fails."""
+        error = Bet.validate_bet("split", "5", 10.0, 100.0)
+        assert "exactly 2 numbers" in error
+
+    def test_validate_split_bet_invalid_format(self):
+        """Test that invalid split bet format fails."""
+        error = Bet.validate_bet("split", "abc,def", 10.0, 100.0)
+        assert "Invalid split bet format" in error
+
+    def test_validate_corner_bet_valid(self):
+        """Test that valid corner bets pass validation."""
+        error = Bet.validate_bet("corner", "1,2,4,5", 10.0, 100.0)
+        assert error is None
+
+    def test_validate_corner_bet_wrong_count(self):
+        """Test that corner bet with wrong number count fails."""
+        error = Bet.validate_bet("corner", "1,2,4", 10.0, 100.0)
+        assert "exactly 4 numbers" in error
+
+    def test_validate_corner_bet_invalid_format(self):
+        """Test that invalid corner bet format fails."""
+        error = Bet.validate_bet("corner", "abc,def,ghi,jkl", 10.0, 100.0)
+        assert "Invalid corner bet format" in error

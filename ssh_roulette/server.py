@@ -17,7 +17,7 @@ async def start_server(
     host_key: str = "host_key",
 ) -> None:
     """Start the SSH Roulette server.
-    
+
     Args:
         host: Host to bind to
         port: Port to bind to
@@ -27,35 +27,35 @@ async def start_server(
     # Initialize database
     db = Database(db_path)
     await db.initialize()
-    
+
     # Reset bankrupt users if needed
     reset_count = await db.reset_bankrupt_users()
     if reset_count > 0:
         print(f"Reset {reset_count} bankrupt users with €10.00")
-    
+
     # Create game state
     game_state = GameState(db)
-    
+
     # Generate host key if it doesn't exist
     host_key_path = Path(host_key)
     if not host_key_path.exists():
         print(f"Generating host key at {host_key}...")
-        key = asyncssh.generate_private_key('ssh-rsa')
+        key = asyncssh.generate_private_key("ssh-rsa")
         host_key_path.write_bytes(key.export_private_key())
-    
+
     # Start SSH server
     print(f"Starting SSH Roulette server on {host}:{port}...")
     print(f"Database: {db_path}")
     print(f"Host key: {host_key}")
     print("\nConnect with: ssh -p {port} localhost")
-    
+
     await asyncssh.create_server(
         lambda: RouletteServer(game_state),
         host,
         port,
         server_host_keys=[host_key],
     )
-    
+
     # Keep server running
     await asyncio.Event().wait()
 
@@ -84,16 +84,18 @@ def main() -> None:
         default="host_key",
         help="Host key file path (default: host_key)",
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
-        asyncio.run(start_server(
-            host=args.host,
-            port=args.port,
-            db_path=args.db,
-            host_key=args.host_key,
-        ))
+        asyncio.run(
+            start_server(
+                host=args.host,
+                port=args.port,
+                db_path=args.db,
+                host_key=args.host_key,
+            )
+        )
     except KeyboardInterrupt:
         print("\nServer stopped.")
         sys.exit(0)
