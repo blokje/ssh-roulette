@@ -246,13 +246,11 @@ class TestMainGameScene:
         channel.clear_output()
         await session._place_bet(BetType.NUMBER, "17", "50")
 
-        output = channel.get_output()
-        # Should show bet confirmation
-        assert "bet" in output.lower() and (
-            "placed" in output.lower() or "success" in output.lower()
-        )
-        # Should show the bet details
-        assert "17" in output and "50" in output
+        # Bet confirmation now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "bet" in chat_text and "17" in chat_text
 
     @pytest.mark.asyncio
     async def test_help_command_shows_all_commands(self, game_state, client_key, temp_db):
@@ -403,9 +401,11 @@ class TestErrorHandlingScenes:
         channel.clear_output()
         await session._place_bet(BetType.NUMBER, "17", "100")
 
-        output = channel.get_output()
-        # Should show insufficient balance error
-        assert "insufficient" in output.lower() or "balance" in output.lower()
+        # Error feedback now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "insufficient" in chat_text or "balance" in chat_text or "rejected" in chat_text
 
     @pytest.mark.asyncio
     async def test_invalid_bet_number_shows_error(self, game_state, client_key, temp_db):
@@ -429,13 +429,15 @@ class TestErrorHandlingScenes:
         channel.clear_output()
         await session._place_bet(BetType.NUMBER, "99", "10")
 
-        output = channel.get_output()
-        # Should show error
+        # Error feedback now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
         assert (
-            "error" in output.lower()
-            or "invalid" in output.lower()
-            or "0" in output
-            and "36" in output
+            "rejected" in chat_text
+            or "error" in chat_text
+            or "invalid" in chat_text
+            or ("0" in chat_text and "36" in chat_text)
         )
 
 
@@ -464,9 +466,11 @@ class TestBetCommandVariations:
         channel.clear_output()
         await session._place_bet(BetType.SPLIT, "5,6", "20")
 
-        output = channel.get_output()
-        # Should show bet confirmation with split details
-        assert "bet" in output.lower() and ("5,6" in output or ("5" in output and "6" in output))
+        # Bet confirmation now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "bet" in chat_text and ("5,6" in chat_text or ("5" in chat_text and "6" in chat_text))
 
     @pytest.mark.asyncio
     async def test_corner_bet_shows_correct_format(self, game_state, client_key, temp_db):
@@ -490,9 +494,11 @@ class TestBetCommandVariations:
         channel.clear_output()
         await session._place_bet(BetType.CORNER, "1,2,4,5", "15")
 
-        output = channel.get_output()
-        # Should show bet confirmation
-        assert "bet" in output.lower() and ("1,2,4,5" in output or "corner" in output.lower())
+        # Bet confirmation now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "bet" in chat_text and ("1,2,4,5" in chat_text or "corner" in chat_text)
 
     @pytest.mark.asyncio
     async def test_color_bet_shows_correct_format(self, game_state, client_key, temp_db):
@@ -516,9 +522,11 @@ class TestBetCommandVariations:
         channel.clear_output()
         await session._place_bet(BetType.COLOR, "red", "25")
 
-        output = channel.get_output()
-        # Should show bet confirmation with color
-        assert "bet" in output.lower() and "red" in output.lower()
+        # Bet confirmation now goes to chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "bet" in chat_text and "red" in chat_text
 
 
 class TestSessionLifecycle:

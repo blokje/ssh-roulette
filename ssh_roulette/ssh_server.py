@@ -30,6 +30,7 @@ class GameState:
         self.last_color: Optional[str] = None
         self.spin_interval = 300  # 5 minutes in seconds
         self.chat_messages: list = []
+        self.round_history: list = []  # List of recent round results
         self._lock = asyncio.Lock()
         self._spin_task: Optional[asyncio.Task] = None
 
@@ -102,6 +103,9 @@ class GameState:
 
     async def _auto_spin_loop(self) -> None:
         """Auto-spin the wheel every 5 minutes when users are connected."""
+        # Set the initial reference time so the countdown starts immediately
+        if not self.last_spin_time:
+            self.last_spin_time = datetime.now(timezone.utc)
         while True:
             try:
                 await asyncio.sleep(self.spin_interval)
@@ -128,6 +132,10 @@ class GameState:
         self.last_spin_time = datetime.now(timezone.utc)
         self.current_game_id = game_id
 
+        # Update round history
+        self.round_history.insert(0, {"id": game_id, "winning_number": number, "winning_color": color})
+        self.round_history = self.round_history[:10]  # Keep last 10
+
         # Broadcast result
         await self.broadcast_message(f"\n🎰 SPIN RESULT: {number} ({color.upper()}) 🎰\n")
 
@@ -135,6 +143,7 @@ class GameState:
         # For now, just notify users
         for session in self.sessions:
             try:
+                session.active_bets.clear()  # Clear bets after spin
                 await session.refresh_display()
             except Exception:
                 pass
@@ -146,7 +155,7 @@ class GameState:
             Seconds until next spin
         """
         if not self.last_spin_time:
-            return 0
+            return self.spin_interval
 
         elapsed = (datetime.now(timezone.utc) - self.last_spin_time).total_seconds()
         remaining = max(0, self.spin_interval - elapsed)
@@ -169,6 +178,7 @@ class RouletteSession(SSHServerSession):
         self.tui = RouletteTUI()
         self._chan: Optional[Any] = None
         self._should_exit = False
+        self.active_bets: list = []  # Bets placed for the current round
         # Buffer for incoming data
         self._input_buffer = ""
         self._input_queue: asyncio.Queue = asyncio.Queue()
@@ -284,6 +294,10 @@ class RouletteSession(SSHServerSession):
             recent_messages = await self.game_state.database.get_recent_chat_messages(50)
             self.game_state.chat_messages = recent_messages
 
+            # Load round history if not already loaded
+            if not self.game_state.round_history:
+                self.game_state.round_history = await self.game_state.database.get_recent_games(10)
+
             # Main game loop
             await self._game_loop()
 
@@ -295,30 +309,75 @@ class RouletteSession(SSHServerSession):
                 await self.game_state.broadcast_message(f"*** {self.username} left the game ***")
 
     async def _game_loop(self) -> None:
-        """Main game loop."""
-        while not self._should_exit:
-            # Refresh user data
-            self.user_data = await self.game_state.database.get_user_by_id(self.user_id)
+        """Main game loop with periodic display refresh."""
+        refresh_task: Optional[asyncio.Task] = None
 
-            # Display game screen
+        async def _periodic_refresh() -> None:
+            """Refresh the display every second to update the countdown timer."""
+            try:
+                while not self._should_exit:
+                    await asyncio.sleep(1)
+                    if not self._should_exit:
+                        self.user_data = await self.game_state.database.get_user_by_id(
+                            self.user_id
+                        )
+                        await self.refresh_display()
+                        self.write("> ")
+            except asyncio.CancelledError:
+                pass
+
+        try:
+            # Initial display
             await self.refresh_display()
-
-            # Read command
             self.write("> ")
-            command = await self._read_line()
+            refresh_task = asyncio.create_task(_periodic_refresh())
 
-            if not command:
-                continue
+            while not self._should_exit:
+                # Read command (blocks until input arrives)
+                command = await self._read_line()
 
-            command = command.strip()
+                if not command:
+                    continue
 
-            # Check if it's a slash command
-            if command.startswith("/"):
-                await self._handle_slash_command(command[1:])
-            else:
-                # Regular message - send as chat
-                if command:
-                    await self.game_state.add_chat_message(self.user_id, self.username, command)
+                command = command.strip()
+                if not command:
+                    continue
+
+                # Pause periodic refresh while processing command
+                if refresh_task and not refresh_task.done():
+                    refresh_task.cancel()
+                    try:
+                        await refresh_task
+                    except asyncio.CancelledError:
+                        pass
+
+                # Refresh user data
+                self.user_data = await self.game_state.database.get_user_by_id(self.user_id)
+
+                # Check if it's a slash command
+                if command.startswith("/"):
+                    await self._handle_slash_command(command[1:])
+                else:
+                    # Regular message - send as chat
+                    await self.game_state.add_chat_message(
+                        self.user_id, self.username, command
+                    )
+
+                if not self._should_exit:
+                    # Refresh display after command and restart periodic refresh
+                    self.user_data = await self.game_state.database.get_user_by_id(
+                        self.user_id
+                    )
+                    await self.refresh_display()
+                    self.write("> ")
+                    refresh_task = asyncio.create_task(_periodic_refresh())
+        finally:
+            if refresh_task and not refresh_task.done():
+                refresh_task.cancel()
+                try:
+                    await refresh_task
+                except asyncio.CancelledError:
+                    pass
 
     async def _handle_slash_command(self, command: str) -> None:
         """Handle slash commands.
@@ -565,26 +624,45 @@ class RouletteSession(SSHServerSession):
         try:
             amount = float(amount_str)
         except ValueError:
-            self.write(self.tui.render_error("Invalid amount") + "\n")
+            async with self.game_state._lock:
+                self.game_state.chat_messages.append({
+                    "username": "*",
+                    "message": "Bet rejected: Invalid amount",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
             return
 
         # Validate bet
         error = Bet.validate_bet(bet_type.value, value, amount, self.user_data["balance"])
 
         if error:
-            self.write(self.tui.render_error(error) + "\n")
+            # Add error feedback as a system chat message
+            async with self.game_state._lock:
+                self.game_state.chat_messages.append({
+                    "username": "*",
+                    "message": f"Bet rejected: {error}",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
             return
 
-        # For now, just acknowledge the bet
-        # In a full implementation, bets would be stored and processed on next spin
-        self.write(
-            self.tui.render_success(f"Bet placed: {bet_type.value} on {value} for €{amount:.2f}")
-            + "\n"
-        )
+        # Track active bet for display
+        self.active_bets.append({
+            "bet_type": bet_type.value,
+            "value": value,
+            "amount": amount,
+        })
 
         # Update balance
         new_balance = self.user_data["balance"] - amount
         await self.game_state.database.update_user_balance(self.user_id, new_balance)
+
+        # Add success feedback as a system chat message
+        async with self.game_state._lock:
+            self.game_state.chat_messages.append({
+                "username": "*",
+                "message": f"{self.username} bet €{amount:.0f} on {bet_type.value} {value}",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
 
     async def _show_users(self) -> None:
         """Show connected users."""
@@ -610,6 +688,8 @@ class RouletteSession(SSHServerSession):
             chat_messages=self.game_state.chat_messages,
             seconds_until_spin=self.game_state.get_seconds_until_spin(),
             num_users=len(self.game_state.sessions),
+            round_history=self.game_state.round_history,
+            active_bets=self.active_bets,
         )
 
         self.write(screen + "\n")
