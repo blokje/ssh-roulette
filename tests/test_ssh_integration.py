@@ -47,10 +47,10 @@ class MockChannel:
 
     def __init__(self, connection):
         self._conn = connection
-        self.stdin = MockStream()
         self.stdout = MockStream()
         self._closing = False
         self._exit_status = None
+        self._session = None
 
     def get_connection(self):
         return self._conn
@@ -64,6 +64,15 @@ class MockChannel:
     def exit(self, status):
         self._exit_status = status
         self._closing = True
+
+    def set_session(self, session):
+        """Store reference to session for simulating input."""
+        self._session = session
+
+    def simulate_input(self, data):
+        """Simulate user input by calling data_received."""
+        if self._session:
+            self._session.data_received(data, None)
 
 
 class MockStream:
@@ -168,12 +177,16 @@ class TestSSHServerIntegration:
         # Create mock channel
         channel = MockChannel(conn)
         session.connection_made(channel)
-
-        # Prepare input for username
-        channel.stdin.data = ["newuser\n"]
+        channel.set_session(session)
 
         # Start session handling
         task = asyncio.create_task(session._handle_session())
+
+        # Give it time to show registration prompt
+        await asyncio.sleep(0.1)
+
+        # Simulate user entering username
+        channel.simulate_input("newuser\n")
 
         # Give it time to process registration
         await asyncio.sleep(0.2)

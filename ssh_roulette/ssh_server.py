@@ -169,6 +169,9 @@ class RouletteSession(SSHServerSession):
         self.tui = RouletteTUI()
         self._chan: Optional[Any] = None
         self._should_exit = False
+        # Buffer for incoming data
+        self._input_buffer = ""
+        self._input_queue: asyncio.Queue = asyncio.Queue()
 
     def connection_made(self, chan: Any) -> None:
         """Called when connection is made.
@@ -177,6 +180,26 @@ class RouletteSession(SSHServerSession):
             chan: SSH channel
         """
         self._chan = chan
+
+    def data_received(self, data: str, datatype: Optional[int]) -> None:
+        """Handle incoming data from the client.
+
+        Args:
+            data: Data received from client
+            datatype: Extended data type
+        """
+        # Buffer the incoming data
+        self._input_buffer += data
+
+        # Process complete lines (terminated by newline)
+        while "\n" in self._input_buffer:
+            line, self._input_buffer = self._input_buffer.split("\n", 1)
+            # Put the line in the queue for reading
+            try:
+                self._input_queue.put_nowait(line.rstrip("\r"))
+            except asyncio.QueueFull:
+                # Queue is full, skip this line
+                pass
 
     def shell_requested(self) -> bool:
         """Handle shell request.
@@ -459,7 +482,7 @@ class RouletteSession(SSHServerSession):
             Input line
         """
         try:
-            line = await asyncio.wait_for(self._chan.stdin.readline(), timeout=300)
+            line = await asyncio.wait_for(self._input_queue.get(), timeout=300)
             return line.strip()
         except asyncio.TimeoutError:
             return ""
