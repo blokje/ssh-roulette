@@ -298,6 +298,24 @@ class Database:
 
                 return len(user_ids)
 
+    async def get_recent_games(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get recent game results.
+
+        Args:
+            limit: Maximum number of games to retrieve
+
+        Returns:
+            List of game dicts ordered most recent first
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM games ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
     async def get_all_users(self) -> List[Dict[str, Any]]:
         """Get all users.
 

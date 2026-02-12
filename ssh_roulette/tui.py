@@ -4,13 +4,34 @@ from blessed import Terminal
 from typing import List, Dict, Any, Optional
 
 
+# Layout constants
+FULL_WIDTH = 80
+FULL_INNER = FULL_WIDTH - 2  # 78, inside │...│
+
+# Bottom section: chat (left) + last rounds (right)
+CHAT_OUTER = 52
+CHAT_INNER = CHAT_OUTER - 2  # 50
+
+ROUNDS_OUTER = FULL_WIDTH - CHAT_OUTER - 1  # 27 (1 char gap)
+ROUNDS_INNER = ROUNDS_OUTER - 2  # 25
+
+# Board section: board (left) + active bets (right)
+BOARD_OUTER = 54
+BOARD_INNER = BOARD_OUTER - 2  # 52
+
+BETS_OUTER = FULL_WIDTH - BOARD_OUTER - 1  # 25
+BETS_INNER = BETS_OUTER - 2  # 23
+
+CHAT_LINES = 6
+
+
 class RouletteTUI:
     """Terminal User Interface for Roulette game."""
 
     def __init__(self):
         """Initialize the TUI."""
         self.term = Terminal()
-        self.width = 80
+        self.width = FULL_WIDTH
         self.height = 24
 
     def clear(self) -> str:
@@ -20,6 +41,364 @@ class RouletteTUI:
             ANSI escape codes to clear screen
         """
         return self.term.clear()
+
+    # ── Box drawing helpers ──────────────────────────────────────────────
+
+    def _box_top(self, inner_w: int) -> str:
+        return "┌" + "─" * inner_w + "┐"
+
+    def _box_bottom(self, inner_w: int) -> str:
+        return "└" + "─" * inner_w + "┘"
+
+    def _box_row(self, text: str, plain_len: int, inner_w: int) -> str:
+        """Build a box row: │<text padded to inner_w>│.
+
+        Args:
+            text: Text (may contain ANSI codes)
+            plain_len: Length of visible characters in text
+            inner_w: Inner width of the box
+        """
+        pad = inner_w - plain_len
+        if pad < 0:
+            pad = 0
+        return "│" + text + " " * pad + "│"
+
+    # ── Status bar ───────────────────────────────────────────────────────
+
+    def render_status_bar(self, seconds_until_spin: int, balance: float) -> str:
+        """Render the top status bar.
+
+        Args:
+            seconds_until_spin: Seconds until next spin
+            balance: Current balance
+
+        Returns:
+            Rendered status bar (3 lines)
+        """
+        mins = seconds_until_spin // 60
+        secs = seconds_until_spin % 60
+
+        if mins > 0:
+            time_str = f"in {mins} minute{'s' if mins != 1 else ''}"
+        else:
+            time_str = f"in {secs} seconds"
+
+        left = f" Next round: {time_str}"
+        right = f"Balance: {int(balance)} "
+        gap = FULL_INNER - len(left) - len(right)
+        if gap < 1:
+            gap = 1
+        plain_row = left + " " * gap + right
+
+        lines = []
+        lines.append(self._box_top(FULL_INNER))
+        lines.append(self._box_row(plain_row, len(plain_row), FULL_INNER))
+        lines.append(self._box_bottom(FULL_INNER))
+        return "\n".join(lines)
+
+    # ── Roulette board ───────────────────────────────────────────────────
+
+    def render_roulette_board(
+        self, last_number: Optional[int] = None, last_color: Optional[str] = None
+    ) -> List[str]:
+        """Render the roulette board with 0 on the left side.
+
+        Layout (inside the box)::
+
+            │   │  3   6   9  12  15  18  21  24  27  30  33  36  │
+            │ 0 │  2   5   8  11  14  17  20  23  26  29  32  35  │
+            │   │  1   4   7  10  13  16  19  22  25  28  31  34  │
+
+        Args:
+            last_number: Last winning number
+            last_color: Last winning color
+
+        Returns:
+            List of rendered lines
+        """
+        from ssh_roulette.game import RouletteWheel
+
+        lines: List[str] = []
+        lines.append(self._box_top(BOARD_INNER))
+
+        # Blank line above the grid
+        lines.append(self._box_row("", 0, BOARD_INNER))
+
+        # 3 number rows with 0 on the left of the middle row
+        for row_start in [3, 2, 1]:
+            # Zero column: show "0" only in the middle row (row_start==2)
+            if row_start == 2:
+                zero_plain = " 0 │"
+                zero_styled = (
+                    f" {self.term.green}{self.term.bold}0{self.term.normal} │"
+                )
+            else:
+                zero_plain = "   │"
+                zero_styled = "   │"
+
+            plain_parts = []
+            styled_parts = []
+            for col in range(12):
+                num = row_start + (col * 3)
+                color = RouletteWheel.get_color(num)
+                num_str = f"{num:>2}"
+                plain_parts.append(f"{num_str}  ")
+                if color == "red":
+                    styled_parts.append(
+                        f"{self.term.red}{num_str}{self.term.normal}  "
+                    )
+                elif color == "black":
+                    styled_parts.append(
+                        f"{self.term.white}{num_str}{self.term.normal}  "
+                    )
+                else:
+                    styled_parts.append(
+                        f"{self.term.green}{num_str}{self.term.normal}  "
+                    )
+
+            nums_plain = " ".join([]) if not plain_parts else "".join(plain_parts)
+            nums_styled = "".join(styled_parts)
+            full_plain = zero_plain + nums_plain
+            full_styled = zero_styled + nums_styled
+            lines.append(self._box_row(full_styled, len(full_plain), BOARD_INNER))
+
+        # Blank line
+        lines.append(self._box_row("", 0, BOARD_INNER))
+
+        # Last result line
+        if last_number is not None and last_color is not None:
+            result_plain = f" Last: {last_number} ({last_color})"
+            color_fn = {"red": self.term.red, "black": self.term.white}.get(
+                last_color, self.term.green
+            )
+            result_styled = (
+                f" Last: {color_fn}{self.term.bold}{last_number}{self.term.normal}"
+                f" ({last_color})"
+            )
+        else:
+            result_plain = " Waiting for first spin..."
+            result_styled = " Waiting for first spin..."
+        lines.append(self._box_row(result_styled, len(result_plain), BOARD_INNER))
+
+        # Blank line
+        lines.append(self._box_row("", 0, BOARD_INNER))
+        lines.append(self._box_bottom(BOARD_INNER))
+        return lines
+
+    # ── Active bets panel ────────────────────────────────────────────────
+
+    def render_active_bets_panel(
+        self, active_bets: List[Dict[str, Any]], total_lines: int = 8
+    ) -> List[str]:
+        """Render the active bets box as a list of lines.
+
+        Args:
+            active_bets: List of bet dicts with 'bet_type', 'value', 'amount'.
+            total_lines: Total content lines (to match board height).
+
+        Returns:
+            List of rendered lines
+        """
+        lines: List[str] = []
+        lines.append(self._box_top(BETS_INNER))
+
+        header = " Active bets:"
+        lines.append(self._box_row(header, len(header), BETS_INNER))
+
+        content_used = 1
+        if active_bets:
+            for bet in active_bets[: total_lines - 2]:
+                btype = bet.get("bet_type", "?")
+                value = bet.get("value", "?")
+                amount = bet.get("amount", 0)
+                text = f"  {btype} {value} €{amount:.0f}"
+                if len(text) > BETS_INNER:
+                    text = text[: BETS_INNER - 1] + "…"
+                lines.append(self._box_row(text, len(text), BETS_INNER))
+                content_used += 1
+        else:
+            no_bets = "  (none)"
+            lines.append(self._box_row(no_bets, len(no_bets), BETS_INNER))
+            content_used += 1
+
+        # Fill remaining
+        for _ in range(total_lines - content_used):
+            lines.append(self._box_row("", 0, BETS_INNER))
+
+        lines.append(self._box_bottom(BETS_INNER))
+        return lines
+
+    # ── Chat panel ───────────────────────────────────────────────────────
+
+    def render_chat_panel(
+        self, messages: List[Dict[str, Any]], max_lines: int = CHAT_LINES,
+    ) -> List[str]:
+        """Render the chat message box as a list of lines.
+
+        Args:
+            messages: List of message dicts with 'username' and 'message'
+            max_lines: Number of message lines visible
+
+        Returns:
+            List of rendered lines (top border, content, bottom border)
+        """
+        lines = []
+        lines.append(self._box_top(CHAT_INNER))
+
+        recent = messages[-max_lines:] if messages else []
+        for msg in recent:
+            username = msg.get("username", "System")
+            message = msg.get("message", "")
+
+            # Format: <user> message  or  * system message
+            if username == "System" or username == "*":
+                plain = f" * {message}"
+                styled = f" {self.term.yellow}*{self.term.normal} {message}"
+            else:
+                plain = f" <{username}> {message}"
+                styled = (
+                    f" {self.term.cyan}<{username}>{self.term.normal} {message}"
+                )
+
+            # Truncate if needed
+            if len(plain) > CHAT_INNER:
+                excess = len(plain) - CHAT_INNER + 3
+                message = message[: len(message) - excess] + "..."
+                if username == "System" or username == "*":
+                    plain = f" * {message}"
+                    styled = f" {self.term.yellow}*{self.term.normal} {message}"
+                else:
+                    plain = f" <{username}> {message}"
+                    styled = (
+                        f" {self.term.cyan}<{username}>{self.term.normal} {message}"
+                    )
+
+            lines.append(self._box_row(styled, len(plain), CHAT_INNER))
+
+        # Fill empty lines
+        for _ in range(max_lines - len(recent)):
+            lines.append(self._box_row("", 0, CHAT_INNER))
+
+        lines.append(self._box_bottom(CHAT_INNER))
+        return lines
+
+    # ── Last rounds panel ────────────────────────────────────────────────
+
+    def render_last_rounds_panel(
+        self, round_history: List[Dict[str, Any]], total_lines: int = 8
+    ) -> List[str]:
+        """Render the last rounds box as a list of lines.
+
+        Args:
+            round_history: Recent rounds, most-recent first.
+                Each dict has 'winning_number' and optionally 'winning_color'.
+            total_lines: Total content lines (to match chat height)
+
+        Returns:
+            List of rendered lines
+        """
+        lines = []
+        lines.append(self._box_top(ROUNDS_INNER))
+
+        # Header
+        header = " Last rounds:"
+        lines.append(self._box_row(header, len(header), ROUNDS_INNER))
+
+        content_lines_used = 1
+        for i, rnd in enumerate(round_history[: total_lines - 2]):
+            num = rnd.get("winning_number", "?")
+            text = f"   #{i + 1} - {num}"
+            lines.append(self._box_row(text, len(text), ROUNDS_INNER))
+            content_lines_used += 1
+
+        # Fill remaining
+        for _ in range(total_lines - content_lines_used):
+            lines.append(self._box_row("", 0, ROUNDS_INNER))
+
+        lines.append(self._box_bottom(ROUNDS_INNER))
+        return lines
+
+    # ── Side-by-side composer ────────────────────────────────────────────
+
+    @staticmethod
+    def _side_by_side(left_lines: List[str], right_lines: List[str], gap: str = " ") -> str:
+        """Combine two column lists of lines side by side.
+
+        Args:
+            left_lines: Lines for left column
+            right_lines: Lines for right column
+            gap: Gap string between columns
+
+        Returns:
+            Combined string
+        """
+        max_len = max(len(left_lines), len(right_lines))
+
+        left_w = len(left_lines[0]) if left_lines else 0
+        right_w = len(right_lines[0]) if right_lines else 0
+
+        result = []
+        for i in range(max_len):
+            l_line = left_lines[i] if i < len(left_lines) else " " * left_w
+            r_line = right_lines[i] if i < len(right_lines) else " " * right_w
+            result.append(l_line + gap + r_line)
+
+        return "\n".join(result)
+
+    # ── Full screen layout ───────────────────────────────────────────────
+
+    def render_full_screen(
+        self,
+        username: str,
+        balance: float,
+        last_number: Optional[int],
+        last_color: Optional[str],
+        chat_messages: List[Dict[str, Any]],
+        seconds_until_spin: int,
+        num_users: int,
+        round_history: Optional[List[Dict[str, Any]]] = None,
+        active_bets: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """Render the full game screen.
+
+        Layout::
+
+            ┌─ status bar (next round + balance) ───────────────────┐
+            ┌─ board ──────────────────────┐ ┌─ active bets ──┐
+            │ 0 │ 3  6  9 … 36            │ │                │
+            └──────────────────────────────┘ └────────────────┘
+            ┌─ chat ──────────────┐ ┌─ last rounds ──┐
+            │                     │ │                 │
+            └─────────────────────┘ └─────────────────┘
+
+        Returns:
+            Full rendered screen
+        """
+        if round_history is None:
+            round_history = []
+        if active_bets is None:
+            active_bets = []
+
+        parts: List[str] = []
+
+        # 1. Status bar (full width)
+        parts.append(self.render_status_bar(seconds_until_spin, balance))
+
+        # 2. Board (left) + active bets (right)
+        board_lines = self.render_roulette_board(last_number, last_color)
+        bets_content = len(board_lines) - 2  # minus top/bottom borders
+        bets_lines = self.render_active_bets_panel(active_bets, total_lines=bets_content)
+        parts.append(self._side_by_side(board_lines, bets_lines))
+
+        # 3. Chat (left) + last rounds (right)
+        chat_lines = self.render_chat_panel(chat_messages)
+        rounds_content = len(chat_lines) - 2
+        rounds_lines = self.render_last_rounds_panel(round_history, total_lines=rounds_content)
+        parts.append(self._side_by_side(chat_lines, rounds_lines))
+
+        return "\n".join(parts)
+
+    # ── Legacy / utility renders ─────────────────────────────────────────
 
     def render_welcome(self, username: str) -> str:
         """Render welcome screen.
@@ -53,73 +432,6 @@ class RouletteTUI:
         lines.append("Welcome! You are a new user.")
         lines.append("Please enter your desired username (3-20 characters, alphanumeric only):")
         lines.append("")
-        return "\n".join(lines)
-
-    def render_roulette_board(
-        self, last_number: Optional[int] = None, last_color: Optional[str] = None
-    ) -> str:
-        """Render the roulette board.
-
-        Args:
-            last_number: Last winning number
-            last_color: Last winning color
-
-        Returns:
-            Rendered board
-        """
-        lines = []
-
-        # Header
-        lines.append(self.term.bold + "┌" + "─" * 78 + "┐")
-        lines.append(self.term.bold + "│" + "ROULETTE BOARD".center(78) + "│")
-        lines.append(self.term.bold + "├" + "─" * 78 + "┤")
-
-        # Last result
-        if last_number is not None:
-            color_code = ""
-            if last_color == "red":
-                color_code = self.term.red
-            elif last_color == "black":
-                color_code = self.term.white
-            else:
-                color_code = self.term.green
-
-            result_text = f"Last: {last_number} ({last_color})"
-            result = (
-                f"Last: {color_code}{self.term.bold}{last_number}{self.term.normal} ({last_color})"
-            )
-            lines.append("│ " + result + " " * (76 - len(result_text)) + " │")
-        else:
-            lines.append("│ " + "Waiting for first spin...".ljust(76) + " │")
-
-        lines.append("├" + "─" * 78 + "┤")
-
-        # Number grid (simplified)
-        # Row 1: 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36
-        # Row 2: 2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35
-        # Row 3: 1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34
-        # 0 on the side
-
-        from ssh_roulette.game import RouletteWheel
-
-        lines.append("│ " + " 0 ".ljust(76) + " │")
-
-        for row in [3, 2, 1]:
-            row_nums = []
-            for col in range(12):
-                num = row + (col * 3)
-                color = RouletteWheel.get_color(num)
-                if color == "red":
-                    row_nums.append(self.term.red(f"{num:2d}"))
-                elif color == "black":
-                    row_nums.append(self.term.white(f"{num:2d}"))
-                else:
-                    row_nums.append(f"{num:2d}")
-
-            lines.append("│ " + " ".join(row_nums) + "  │")
-
-        lines.append("└" + "─" * 78 + "┘")
-
         return "\n".join(lines)
 
     def render_balance(self, balance: float) -> str:
@@ -174,42 +486,6 @@ class RouletteTUI:
         lines.append("")
         return "\n".join(lines)
 
-    def render_chat(self, messages: List[Dict[str, Any]], max_lines: int = 10) -> str:
-        """Render chat messages.
-
-        Args:
-            messages: List of message dicts with 'username' and 'message'
-            max_lines: Maximum number of lines to display
-
-        Returns:
-            Rendered chat
-        """
-        lines = []
-        lines.append(self.term.bold + "┌" + "─" * 78 + "┐")
-        lines.append(self.term.bold + "│" + "CHAT".center(78) + "│")
-        lines.append(self.term.bold + "├" + "─" * 78 + "┤")
-
-        recent_messages = messages[-max_lines:]
-        for msg in recent_messages:
-            username = msg.get("username", "Unknown")
-            message = msg.get("message", "")
-            line = f"{self.term.cyan}{username}{self.term.normal}: {message}"
-            # Truncate if too long
-            if len(f"{username}: {message}") > 76:
-                message = message[: 73 - len(username)] + "..."
-                line = f"{self.term.cyan}{username}{self.term.normal}: {message}"
-
-            padding = 76 - len(f"{username}: {message}")
-            lines.append("│ " + line + " " * padding + " │")
-
-        # Fill empty lines
-        for _ in range(max_lines - len(recent_messages)):
-            lines.append("│" + " " * 78 + "│")
-
-        lines.append("└" + "─" * 78 + "┘")
-
-        return "\n".join(lines)
-
     def render_game_status(self, seconds_until_spin: int, num_users: int) -> str:
         """Render game status.
 
@@ -228,53 +504,37 @@ class RouletteTUI:
 
         return status
 
-    def render_full_screen(
-        self,
-        username: str,
-        balance: float,
-        last_number: Optional[int],
-        last_color: Optional[str],
-        chat_messages: List[Dict[str, Any]],
-        seconds_until_spin: int,
-        num_users: int,
-    ) -> str:
-        """Render the full game screen.
+    def render_chat(self, messages: List[Dict[str, Any]], max_lines: int = 10) -> str:
+        """Render chat messages (legacy full-width version).
 
         Args:
-            username: Current username
-            balance: Current balance
-            last_number: Last winning number
-            last_color: Last winning color
-            chat_messages: Chat messages
-            seconds_until_spin: Seconds until next spin
-            num_users: Number of connected users
+            messages: List of message dicts with 'username' and 'message'
+            max_lines: Maximum number of lines to display
 
         Returns:
-            Full rendered screen
+            Rendered chat
         """
         lines = []
+        lines.append(self.term.bold + "┌" + "─" * 78 + "┐")
+        lines.append(self.term.bold + "│" + "CHAT".center(78) + "│")
+        lines.append(self.term.bold + "├" + "─" * 78 + "┤")
 
-        # Welcome header
-        lines.append(self.render_welcome(username))
+        recent_messages = messages[-max_lines:]
+        for msg in recent_messages:
+            username = msg.get("username", "Unknown")
+            message = msg.get("message", "")
+            line = f"{self.term.cyan}{username}{self.term.normal}: {message}"
+            if len(f"{username}: {message}") > 76:
+                message = message[: 73 - len(username)] + "..."
+                line = f"{self.term.cyan}{username}{self.term.normal}: {message}"
 
-        # Balance
-        lines.append(self.render_balance(balance))
-        lines.append("")
+            padding = 76 - len(f"{username}: {message}")
+            lines.append("│ " + line + " " * padding + " │")
 
-        # Roulette board
-        lines.append(self.render_roulette_board(last_number, last_color))
-        lines.append("")
+        for _ in range(max_lines - len(recent_messages)):
+            lines.append("│" + " " * 78 + "│")
 
-        # Game status
-        lines.append(self.render_game_status(seconds_until_spin, num_users))
-        lines.append("")
-
-        # Chat
-        lines.append(self.render_chat(chat_messages))
-        lines.append("")
-
-        # Bet options
-        lines.append(self.render_bet_options())
+        lines.append("└" + "─" * 78 + "┘")
 
         return "\n".join(lines)
 

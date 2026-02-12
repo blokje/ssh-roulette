@@ -271,14 +271,20 @@ async def test_end_to_end_chat_and_users():
 
                         # User1 sends chat message
                         process1.stdin.write("Hello from user1!\n")
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.5)
+
+                        # Drain any prior output
+                        try:
+                            await asyncio.wait_for(process1.stdout.read(65536), timeout=0.5)
+                        except asyncio.TimeoutError:
+                            pass
 
                         # User1 checks connected users
                         process1.stdin.write("/users\n")
-                        await asyncio.sleep(0.3)
-                        output = await asyncio.wait_for(process1.stdout.read(2048), timeout=5)
+                        await asyncio.sleep(1.0)
+                        output = await asyncio.wait_for(process1.stdout.read(65536), timeout=5)
                         output_str = output.decode() if isinstance(output, bytes) else output
-                        # Should see both users
+                        # Should see both users in /users output or subsequent screen
                         assert "chatuser1" in output_str or "chatuser2" in output_str
 
     finally:

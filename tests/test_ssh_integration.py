@@ -354,9 +354,11 @@ class TestSSHServerIntegration:
         user = await temp_db.get_user_by_id(user_id)
         assert user["balance"] == 5.0
 
-        # Check error message was written
-        output = "".join(channel.stdout.data)
-        assert "Insufficient" in output or "Error" in output
+        # Check error feedback in chat messages
+        chat_text = " ".join(
+            m["message"] for m in game_state.chat_messages
+        ).lower()
+        assert "insufficient" in chat_text or "balance" in chat_text or "rejected" in chat_text
 
     @pytest.mark.asyncio
     async def test_different_bet_types(self, game_state, client_key, temp_db):
