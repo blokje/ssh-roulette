@@ -341,9 +341,10 @@ class RouletteSession(SSHServerSession):
             self.write(self.tui.render_bet_options())
         elif cmd == "users":
             await self._show_users()
-        elif cmd == "bet" and len(parts) >= 3:
-            # /bet <type> <value> <amount>
-            # Examples:
+        elif cmd == "bet" and len(parts) >= 2:
+            # Simplified syntax:
+            #   /bet 10 17           - Bet €10 on number 17
+            # Legacy syntax (still supported):
             #   /bet number 17 10
             #   /bet split 5,6 20
             #   /bet corner 1,2,4,5 15
@@ -360,11 +361,27 @@ class RouletteSession(SSHServerSession):
         """Handle bet command.
 
         Args:
-            args: Command arguments (type, value, amount)
+            args: Command arguments (amount, number) for simplified syntax or (type, value, amount) for legacy syntax
         """
         if len(args) < 2:
-            self.write(self.tui.render_error("Usage: /bet <type> <value> <amount>") + "\n")
+            self.write(self.tui.render_error("Usage: /bet <amount> <number> or /bet <type> <value> <amount>") + "\n")
             return
+
+        # Check if first argument is an amount (simplified syntax: /bet 10 17)
+        try:
+            amount = float(args[0])
+            if len(args) == 2:
+                # Try to parse second argument as a number
+                try:
+                    number = int(args[1])
+                    if 0 <= number <= 36:
+                        # Simplified syntax: /bet <amount> <number>
+                        await self._place_bet(BetType.NUMBER, args[1], args[0])
+                        return
+                except ValueError:
+                    pass  # Not a number, continue with legacy syntax
+        except ValueError:
+            pass  # Not an amount, continue with legacy syntax
 
         bet_type_str = args[0].lower()
 

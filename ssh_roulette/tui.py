@@ -143,7 +143,7 @@ class RouletteTUI:
         lines.append(self.term.bold + "Commands (use in chat with /):")
         lines.append("")
         lines.append(
-            "  " + self.term.green("/bet number <n> <amt>") + "     - Straight up (0-36), pays 35:1"
+            "  " + self.term.green("/bet <amt> <n>") + "           - Straight up (0-36), pays 35:1"
         )
         lines.append(
             "  " + self.term.green("/bet split <n1,n2> <amt>") + "  - 2 adjacent numbers, pays 17:1"

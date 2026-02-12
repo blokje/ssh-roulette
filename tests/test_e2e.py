@@ -109,7 +109,7 @@ async def test_full_end_to_end_flow():
 
                 # ===== Step 5: Place winning bet =====
                 # Bet €50 on number 17
-                process.stdin.write("/bet number 17 50\n")
+                process.stdin.write("/bet 50 17\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
@@ -140,7 +140,7 @@ async def test_full_end_to_end_flow():
 
                 # ===== Step 7: Go all-in =====
                 # Bet all remaining balance on number 5
-                process.stdin.write("/bet number 5 50\n")
+                process.stdin.write("/bet 50 5\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
@@ -155,7 +155,7 @@ async def test_full_end_to_end_flow():
                     assert user["balance"] == 0.0
 
                 # ===== Step 9: Try to bet, should reject =====
-                process.stdin.write("/bet number 7 10\n")
+                process.stdin.write("/bet 10 7\n")
                 await asyncio.sleep(0.3)
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
@@ -331,7 +331,7 @@ async def test_end_to_end_all_bet_types():
 
                 # Test different bet types
                 bet_commands = [
-                    "/bet number 17 5\n",
+                    "/bet 5 17\n",
                     "/bet split 5,6 5\n",
                     "/bet corner 1,2,4,5 5\n",
                     "/bet color red 5\n",

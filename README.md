@@ -58,8 +58,8 @@ Once connected, you can use the following commands:
 
 #### Betting Commands
 
-- `/bet number <n> <amount>` - Straight up bet on number (0-36), pays 35:1
-  - Example: `/bet number 17 10` (bet €10 on number 17)
+- `/bet <amount> <n>` - Straight up bet on number (0-36), pays 35:1
+  - Example: `/bet 10 17` (bet €10 on number 17)
 
 - `/bet split <n1,n2> <amount>` - Bet on 2 adjacent numbers, pays 17:1
   - Example: `/bet split 5,6 20` (bet €20 on numbers 5 and 6)
