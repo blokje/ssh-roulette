@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "ssh-roulette"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "asyncssh", version = "2.21.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
