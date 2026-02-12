@@ -162,9 +162,10 @@ async def test_full_end_to_end_flow():
 
                 output = await asyncio.wait_for(process.stdout.read(2048), timeout=5)
                 output_str = output.decode() if isinstance(output, bytes) else output
-                # Bet should fail due to insufficient balance, but error message
-                # gets overwritten by display refresh - just verify we got output
-                assert len(output_str) > 0
+                # Bet should fail due to insufficient balance
+                # Verify balance is still 0 (bet was rejected)
+                user = await db.get_user_by_fingerprint(key_fingerprint)
+                assert user["balance"] == 0.0  # Balance unchanged, bet was rejected
 
                 # ===== Step 10: Fake new day, restore balance =====
                 # Set last_bankruptcy_reset to yesterday

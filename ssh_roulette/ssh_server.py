@@ -377,9 +377,11 @@ class RouletteSession(SSHServerSession):
             return
 
         # Check if first argument is an amount (simplified syntax)
+        # This is a quick check to determine which parsing path to take
+        # Actual validation with error messages happens in _handle_simplified_bet
         try:
-            float(args[0])  # Validate it's a number
-            # Simplified syntax detected
+            float(args[0])  # Check if it parses as a number
+            # Simplified syntax detected - pass original string to preserve format
             await self._handle_simplified_bet(args[0], args[1:])
             return
         except ValueError:
