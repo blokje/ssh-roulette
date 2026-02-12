@@ -47,7 +47,7 @@ async def start_server(
     print(f"Starting SSH Roulette server on {host}:{port}...")
     print(f"Database: {db_path}")
     print(f"Host key: {host_key}")
-    print("\nConnect with: ssh -p {port} localhost")
+    print(f"\nConnect with: ssh -p {port} localhost")
 
     await asyncssh.create_server(
         lambda: RouletteServer(game_state),

@@ -202,7 +202,9 @@ class Bet:
                 for num in numbers:
                     if not 0 <= num <= 36:
                         return "Numbers must be between 0 and 36"
-                # Check if numbers are adjacent (simplified check)
+                # Check if numbers are adjacent on the roulette table
+                # Adjacent = difference of 1 (horizontal) or 3 (vertical in 3-column layout)
+                # This is a simplified check for the standard roulette table layout
                 if abs(numbers[0] - numbers[1]) not in [1, 3]:
                     return "Numbers must be adjacent on the roulette table"
             except ValueError:

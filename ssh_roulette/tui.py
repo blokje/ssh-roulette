@@ -84,12 +84,11 @@ class RouletteTUI:
             else:
                 color_code = self.term.green
 
+            result_text = f"Last: {last_number} ({last_color})"
             result = (
                 f"Last: {color_code}{self.term.bold}{last_number}{self.term.normal} ({last_color})"
             )
-            lines.append(
-                "│ " + result + " " * (76 - len(f"Last: {last_number} ({last_color})")) + " │"
-            )
+            lines.append("│ " + result + " " * (76 - len(result_text)) + " │")
         else:
             lines.append("│ " + "Waiting for first spin...".ljust(76) + " │")
 

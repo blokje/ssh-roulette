@@ -58,24 +58,37 @@ Once connected, you can use the following commands:
 
 #### Betting Commands
 
-- `n <number> <amount>` - Bet on a specific number (0-36), pays 35:1
-  - Example: `n 17 10` (bet €10 on number 17)
+- `/bet number <n> <amount>` - Straight up bet on number (0-36), pays 35:1
+  - Example: `/bet number 17 10` (bet €10 on number 17)
 
-- `c <color> <amount>` - Bet on red or black, pays 1:1
-  - Example: `c red 20` (bet €20 on red)
+- `/bet split <n1,n2> <amount>` - Bet on 2 adjacent numbers, pays 17:1
+  - Example: `/bet split 5,6 20` (bet €20 on numbers 5 and 6)
 
-- `e <even/odd> <amount>` - Bet on even or odd numbers, pays 1:1
-  - Example: `e even 15` (bet €15 on even)
+- `/bet corner <n1,n2,n3,n4> <amount>` - Bet on 4 corner numbers, pays 8:1
+  - Example: `/bet corner 1,2,4,5 15` (bet €15 on the corner 1,2,4,5)
 
-- `h <high/low> <amount>` - Bet on high (19-36) or low (1-18), pays 1:1
-  - Example: `h high 25` (bet €25 on high numbers)
+- `/bet color <red/black> <amount>` - Bet on red or black, pays 1:1
+  - Example: `/bet color red 20` (bet €20 on red)
+
+- `/bet even <amount>` - Bet on even numbers, pays 1:1
+  - Example: `/bet even 15` (bet €15 on even)
+
+- `/bet odd <amount>` - Bet on odd numbers, pays 1:1
+  - Example: `/bet odd 15` (bet €15 on odd)
+
+- `/bet high <amount>` - Bet on high numbers (19-36), pays 1:1
+  - Example: `/bet high 25` (bet €25 on high numbers)
+
+- `/bet low <amount>` - Bet on low numbers (1-18), pays 1:1
+  - Example: `/bet low 25` (bet €25 on low numbers)
 
 #### Other Commands
 
-- `chat <message>` - Send a message to all connected players
-- `users` - List all connected players
-- `help` - Show help message
-- `quit` - Exit the game
+- **Chat**: Simply type a message without `/` to send it to all connected players
+  - Example: `Hello everyone!`
+- `/users` - List all connected players
+- `/help` - Show help message
+- `/quit` - Exit the game
 
 ### Game Mechanics
 
