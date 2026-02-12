@@ -196,10 +196,12 @@ class RouletteSession(SSHServerSession):
             # Get SSH connection to retrieve key info
             conn = self._chan.get_connection()
 
-            # Get SSH key fingerprint
-            client_key = conn.get_key()
+            # Get SSH key fingerprint from extra_info (stored during authentication)
+            client_key = conn.get_extra_info("client_public_key")
             if client_key:
-                key_fingerprint = hashlib.sha256(client_key.get_ssh_public_key()).hexdigest()
+                key_fingerprint = hashlib.sha256(
+                    client_key.encode_ssh_public()
+                ).hexdigest()
             else:
                 self.write(
                     "Error: No SSH key provided. Connection requires SSH key authentication.\n"
@@ -484,6 +486,15 @@ class RouletteServer(asyncssh.SSHServer):
             game_state: Shared game state
         """
         self.game_state = game_state
+        self._conn = None
+
+    def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
+        """Called when connection is established.
+
+        Args:
+            conn: SSH server connection
+        """
+        self._conn = conn
 
     def begin_auth(self, username: str) -> bool:
         """Begin authentication.
@@ -515,6 +526,9 @@ class RouletteServer(asyncssh.SSHServer):
         Returns:
             True to accept any key (we'll handle registration in the session)
         """
+        # Store the client's public key for later use in the session
+        if self._conn:
+            self._conn.set_extra_info(client_public_key=key)
         # Accept all keys - we handle user registration in the session
         return True
 
